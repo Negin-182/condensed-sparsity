@@ -36,6 +36,7 @@ class IndexMaskHook:
         self.layer_idx = layer_idx
         self.scheduler = scheduler
         self.dense_grad = None
+        
 
     def __name__(self):
         return "IndexMaskHook"
@@ -187,6 +188,14 @@ class RigLScheduler:
         self.delta_T = delta
         self.alpha = alpha
         self.T_end = T_end
+        self.current_loss = None
+        ######################
+        self.current_loss = None
+        self.avg_loss = None
+        self.loss_ema_alpha = 0.9
+        self.min_prune_scale = 0.5
+        self.max_prune_scale = 1.5
+        #######################
         self.dense_allocation = dense_allocation
         self.model = model
         self.optimizer = optimizer
@@ -564,7 +573,18 @@ class RigLScheduler:
             if type(v) is dict:
                 self.load_state_dict(v)
             setattr(self, k, v)
+#########################################################
+    def set_current_loss(self, loss: float) -> None:
+    self.current_loss = loss
+    if self.avg_loss is None:
+        self.avg_loss = loss
+    else:
+        self.avg_loss = (
+            self.loss_ema_alpha * self.avg_loss
+            + (1 - self.loss_ema_alpha) * loss
+        )
 
+#############################################################3
     @torch.no_grad()
     def random_sparsify(self):
         """Randomly sparsifies layers at initalization."""
@@ -731,13 +751,24 @@ class RigLScheduler:
         steps_til_next_rigl_step = self.delta_T - (self.step % self.delta_T)
         return steps_til_next_rigl_step <= self.grad_accumulation_n
 
-    def cosine_annealing(self) -> float:
-        """Returns current pruning rate based on cosine annealing schedule.
+   def cosine_annealing(self) -> float:
+        base_drop = self.alpha / 2 * (
+        1 + np.cos((self.step * np.pi) / self.T_end)
+        )
 
-        Returns:
-            float: Portion of connections to prune this step.
-        """
-        return self.alpha / 2 * (1 + np.cos((self.step * np.pi) / self.T_end))
+        if self.current_loss is None or self.avg_loss is None:
+            return base_drop
+
+        loss_ratio = self.avg_loss / (self.current_loss + 1e-8)
+
+        prune_scale = torch.clamp(
+        torch.tensor(loss_ratio),
+        self.min_prune_scale,
+        self.max_prune_scale,
+        ).item()
+
+        return base_drop * prune_scale
+
 
     def __call__(self) -> bool:
         """Performs prune / regrow step if applicable.

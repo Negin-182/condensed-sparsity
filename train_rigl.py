@@ -299,6 +299,11 @@ def main(rank: int, cfg: omegaconf.DictConfig) -> None:
     if rank == 0 and cfg.wandb.log_to_wandb:
         run.finish()
 
+avg_loss = 0.0
+alpha = 0.9
+s_base = cfg.rigl.dense_allocation
+s_min = 0.3
+s_max = 0.9
 
 def train(
     cfg,
@@ -339,8 +344,29 @@ def train(
                 target,
                 label_smoothing=cfg.training.label_smoothing,
             )
+
+###################################################
+             loss_value = loss.item()
+            if avg_loss is None:
+                avg_loss = loss_value
+            else:
+                avg_loss = alpha * avg_loss + (1 - alpha) * loss_value
+
+             loss_value = loss.item()
+            if avg_loss is None:
+                avg_loss = loss_value
+            else:
+                avg_loss = alpha * avg_loss + (1 - alpha) * loss_value
+###########################################################
+            
             # Normalize loss for accumulated grad
             loss = loss / steps_to_accumulate_grad
+            loss_value = loss.item()
+            if avg_loss is None:
+                avg_loss = loss_value
+            else:
+                avg_loss = alpha * avg_loss + (1 - alpha) * loss_value
+        
 
         # Will call backwards hooks on model and accumulate dense grads if
         # within cfg.rigl.grad_accumulation_n mini-batch steps from update
@@ -358,7 +384,7 @@ def train(
             scaler.step(optimizer)
             scaler.update()  # we only update scale once optim step is taken
             if pruner is not None:
-                # pruner.__call__ returns False if rigl step taken
+                pruner.dense_allocation = s_t
                 pruner_called = not pruner()
             # optimizer.zero_grad()
 

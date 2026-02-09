@@ -575,11 +575,11 @@ class RigLScheduler:
             setattr(self, k, v)
 #########################################################
     def set_current_loss(self, loss: float) -> None:
-    self.current_loss = loss
-    if self.avg_loss is None:
-        self.avg_loss = loss
-    else:
-        self.avg_loss = (
+        self.current_loss = loss
+        if self.avg_loss is None:
+            self.avg_loss = loss
+        else:
+            self.avg_loss = (
             self.loss_ema_alpha * self.avg_loss
             + (1 - self.loss_ema_alpha) * loss
         )
@@ -751,7 +751,7 @@ class RigLScheduler:
         steps_til_next_rigl_step = self.delta_T - (self.step % self.delta_T)
         return steps_til_next_rigl_step <= self.grad_accumulation_n
 
-   def cosine_annealing(self) -> float:
+    def cosine_annealing(self) -> float:
         base_drop = self.alpha / 2 * (
         1 + np.cos((self.step * np.pi) / self.T_end)
         )
